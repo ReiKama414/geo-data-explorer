@@ -64,18 +64,39 @@ export const ImportModal: React.FC<ImportModalProps> = ({
   const [geoError, setGeoError] = useState<string>('');
   const [csvError, setCsvError] = useState<string>('');
 
-  // Handle GeoJSON File Upload
+  // Handle GeoJSON File Upload with strict boundary checks
   const handleGeoFileUpload = (file: File) => {
     setGeoError('');
+    if (!file) return;
+
+    if (file.size === 0) {
+      setGeoError('選取的 GeoJSON 檔案內容為空 (0 Bytes)，請選取有效的圖資檔案');
+      setGeoJsonData(null);
+      return;
+    }
+
+    if (file.size > 50 * 1024 * 1024) {
+      setGeoError('檔案容量超過 50MB 上限，請先在 GIS 軟體中適度簡化幾何');
+      setGeoJsonData(null);
+      return;
+    }
+
     setGeoFileName(file.name);
     const reader = new FileReader();
     reader.onload = (e) => {
       try {
         const text = e.target?.result as string;
+        if (!text || text.trim() === '') {
+          throw new Error('檔案讀取結果為空字串');
+        }
         const parsed = JSON.parse(text);
         if (parsed.type !== 'FeatureCollection' || !Array.isArray(parsed.features)) {
-          throw new Error('JSON 格式必須為標準 GeoJSON FeatureCollection (包含 features 陣列)');
+          throw new Error('檔案非標準 GeoJSON 格式：根物件必須為 FeatureCollection 且包含 features 陣列');
         }
+        if (parsed.features.length === 0) {
+          throw new Error('此 GeoJSON 檔案中未包含任何地理圖徵 (features 為空陣列)');
+        }
+
         setGeoJsonData(parsed);
 
         // Auto choose geo key
@@ -88,12 +109,24 @@ export const ImportModal: React.FC<ImportModalProps> = ({
         setGeoJsonData(null);
       }
     };
+    reader.onerror = () => {
+      setGeoError('讀取本機檔案失敗');
+      setGeoJsonData(null);
+    };
     reader.readAsText(file);
   };
 
-  // Handle CSV File Upload
+  // Handle CSV File Upload with strict boundary checks
   const handleCsvFileUpload = (file: File) => {
     setCsvError('');
+    if (!file) return;
+
+    if (file.size === 0) {
+      setCsvError('選取的 CSV 檔案內容為空 (0 Bytes)，請選取有效的數據檔案');
+      setCsvData(null);
+      return;
+    }
+
     setCsvFileName(file.name);
     Papa.parse<Record<string, any>>(file, {
       header: true,
@@ -101,12 +134,18 @@ export const ImportModal: React.FC<ImportModalProps> = ({
       dynamicTyping: false,
       complete: (results) => {
         if (!results.data || results.data.length === 0) {
-          setCsvError('CSV 檔案為空或無法讀取標題行');
+          setCsvError('CSV 檔案為空或無法識別標題列');
           setCsvData(null);
           return;
         }
 
         const headers = results.meta.fields || Object.keys(results.data[0]);
+        if (headers.length === 0) {
+          setCsvError('CSV 無法識別有效的欄位名稱');
+          setCsvData(null);
+          return;
+        }
+
         const dataset: CsvDataset = {
           fileName: file.name,
           headers,
@@ -195,27 +234,25 @@ export const ImportModal: React.FC<ImportModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-md p-4 animate-in fade-in duration-200">
-      <div className="bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl max-w-3xl w-full max-h-[92vh] flex flex-col overflow-hidden text-xs">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 animate-in fade-in duration-200">
+      <div className="bg-slate-900 border border-slate-700 rounded-xl shadow-2xl max-w-3xl w-full max-h-[92vh] flex flex-col overflow-hidden text-xs">
         {/* Header */}
-        <div className="p-4 border-b border-slate-800 flex items-center justify-between bg-slate-950/60">
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-xl bg-sky-500/10 text-sky-400">
-              <Upload className="w-5 h-5" />
-            </div>
+        <div className="p-3.5 border-b border-slate-800 flex items-center justify-between bg-slate-950/70">
+          <div className="flex items-center gap-2">
+            <Upload className="w-5 h-5 text-sky-400" />
             <div>
-              <h2 className="text-base font-bold text-white">匯入地理圖資與數據</h2>
-              <p className="text-xs text-slate-400">
-                可選擇精選範例資料集，或自行匯入 GeoJSON 與 CSV 進行代碼合併
+              <h2 className="text-sm font-bold text-white">匯入地理圖資與數據</h2>
+              <p className="text-[11px] text-slate-400">
+                可選取精選範例資料庫，或自訂上傳 GeoJSON 與 CSV 進行代碼合併
               </p>
             </div>
           </div>
 
           <button
             onClick={onClose}
-            className="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
+            className="p-1.5 text-slate-400 hover:text-white rounded hover:bg-slate-800 cursor-pointer"
           >
-            <X className="w-5 h-5" />
+            <X className="w-4 h-4" />
           </button>
         </div>
 
@@ -223,10 +260,10 @@ export const ImportModal: React.FC<ImportModalProps> = ({
         <div className="flex border-b border-slate-800 bg-slate-950/40 p-2 gap-2">
           <button
             onClick={() => setActiveTab('presets')}
-            className={`flex-1 py-2 rounded-xl font-bold transition-all flex items-center justify-center gap-2 cursor-pointer ${
+            className={`flex-1 py-1.5 rounded-lg font-bold transition-all flex items-center justify-center gap-2 cursor-pointer ${
               activeTab === 'presets'
-                ? 'bg-sky-500 text-white shadow-md'
-                : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+                ? 'bg-sky-600 text-white'
+                : 'text-slate-400 hover:text-white hover:bg-slate-800'
             }`}
           >
             <Sparkles className="w-4 h-4" />
@@ -234,10 +271,10 @@ export const ImportModal: React.FC<ImportModalProps> = ({
           </button>
           <button
             onClick={() => setActiveTab('custom')}
-            className={`flex-1 py-2 rounded-xl font-bold transition-all flex items-center justify-center gap-2 cursor-pointer ${
+            className={`flex-1 py-1.5 rounded-lg font-bold transition-all flex items-center justify-center gap-2 cursor-pointer ${
               activeTab === 'custom'
-                ? 'bg-sky-500 text-white shadow-md'
-                : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+                ? 'bg-sky-600 text-white'
+                : 'text-slate-400 hover:text-white hover:bg-slate-800'
             }`}
           >
             <FileSpreadsheet className="w-4 h-4" />
@@ -249,89 +286,89 @@ export const ImportModal: React.FC<ImportModalProps> = ({
         <div className="flex-1 overflow-y-auto p-4">
           {activeTab === 'presets' ? (
             <div className="space-y-3">
-              <div className="text-slate-400 mb-2">
+              <div className="text-slate-400 mb-1">
                 直接選擇預先載入的高品質多期地理資料，立即體驗完整分級設色、時間切換與未匹配診斷功能：
               </div>
 
               {/* Preset 1: Taiwan */}
-              <div className="p-4 bg-slate-950/70 border border-slate-800 rounded-2xl hover:border-sky-500/50 transition-all flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+              <div className="p-3.5 bg-slate-950/70 border border-slate-800 rounded-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
                 <div className="space-y-1">
                   <div className="flex items-center gap-2">
-                    <span className="text-lg">🇹🇼</span>
-                    <h3 className="font-bold text-slate-100 text-sm">
+                    <span className="text-base">🇹🇼</span>
+                    <h3 className="font-bold text-slate-100 text-xs">
                       台灣各縣市發展指標 (2020 - 2024)
                     </h3>
-                    <span className="bg-sky-500/20 text-sky-300 font-mono text-[10px] px-2 py-0.5 rounded-full">
+                    <span className="bg-sky-500/20 text-sky-300 font-mono text-[10px] px-2 py-0.2 rounded">
                       22 縣市 • 5 年期
                     </span>
                   </div>
-                  <p className="text-slate-400 text-xs">
-                    包含人口數、綜合所得中位數、老化指數、太陽光電容量、平均房價等指標。
+                  <p className="text-slate-400 text-[11px]">
+                    人口數、綜合所得中位數（千元）、老化指數、太陽光電容量（MW）、平均房價。
                   </p>
-                  <p className="text-amber-400/90 text-[11px] font-mono">
-                    ⚠️ 內建包含 2 筆非建制保護區測試資料，展示未匹配且不捏造座標之保護機制。
+                  <p className="text-amber-400/90 text-[10px] font-mono">
+                    ⚠️ 內建包含 2 筆非建制特定保護區資料，展示未匹配且不捏造座標之保護機制。
                   </p>
                 </div>
 
                 <button
                   onClick={() => onLoadPreset('taiwan')}
                   disabled={isLoading}
-                  className="px-4 py-2 bg-sky-600 hover:bg-sky-500 disabled:opacity-50 text-white font-bold rounded-xl shadow-lg shadow-sky-600/20 transition-all shrink-0 cursor-pointer"
+                  className="px-3 py-1.5 bg-sky-600 hover:bg-sky-500 disabled:opacity-50 text-white font-semibold rounded transition-colors shrink-0 cursor-pointer"
                 >
                   載入台灣資料集
                 </button>
               </div>
 
               {/* Preset 2: World */}
-              <div className="p-4 bg-slate-950/70 border border-slate-800 rounded-2xl hover:border-sky-500/50 transition-all flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+              <div className="p-3.5 bg-slate-950/70 border border-slate-800 rounded-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
                 <div className="space-y-1">
                   <div className="flex items-center gap-2">
-                    <span className="text-lg">🌍</span>
-                    <h3 className="font-bold text-slate-100 text-sm">
+                    <span className="text-base">🌍</span>
+                    <h3 className="font-bold text-slate-100 text-xs">
                       全球國家發展指標 (2020 - 2024)
                     </h3>
-                    <span className="bg-emerald-500/20 text-emerald-300 font-mono text-[10px] px-2 py-0.5 rounded-full">
+                    <span className="bg-emerald-500/20 text-emerald-300 font-mono text-[10px] px-2 py-0.2 rounded">
                       177 國 • 5 年期
                     </span>
                   </div>
-                  <p className="text-slate-400 text-xs">
+                  <p className="text-slate-400 text-[11px]">
                     Natural Earth 向量國界，包含人均 GDP、預期壽命、再生能源比例與網路普及率。
                   </p>
-                  <p className="text-amber-400/90 text-[11px] font-mono">
-                    ⚠️ 內建包含深海科研站等未匹配代碼以展示診斷。
+                  <p className="text-amber-400/90 text-[10px] font-mono">
+                    ⚠️ 包含深海科研站未匹配代碼以展示診斷。
                   </p>
                 </div>
 
                 <button
                   onClick={() => onLoadPreset('world')}
                   disabled={isLoading}
-                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold rounded-xl shadow-lg shadow-emerald-600/20 transition-all shrink-0 cursor-pointer"
+                  className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-semibold rounded transition-colors shrink-0 cursor-pointer"
                 >
                   載入全球資料集
                 </button>
               </div>
 
               {/* Preset 3: US States */}
-              <div className="p-4 bg-slate-950/70 border border-slate-800 rounded-2xl hover:border-sky-500/50 transition-all flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+              <div className="p-3.5 bg-slate-950/70 border border-slate-800 rounded-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
                 <div className="space-y-1">
                   <div className="flex items-center gap-2">
-                    <span className="text-lg">🇺🇸</span>
-                    <h3 className="font-bold text-slate-100 text-sm">
+                    <span className="text-base">🇺🇸</span>
+                    <h3 className="font-bold text-slate-100 text-xs">
                       美國各州經濟與綠能普及 (2021 - 2024)
                     </h3>
-                    <span className="bg-purple-500/20 text-purple-300 font-mono text-[10px] px-2 py-0.5 rounded-full">
+                    <span className="bg-purple-500/20 text-purple-300 font-mono text-[10px] px-2 py-0.2 rounded">
                       52 州/特區 • 4 年期
                     </span>
                   </div>
-                  <p className="text-slate-400 text-xs">
-                    包含家庭收入中位數、電動車新車佔比 (EV %)、潔淨綠能發電佔比。
+                  <p className="text-slate-400 text-[11px]">
+                    家庭收入中位數、電動車新車佔比 (EV %)、潔淨綠能發電佔比。
                   </p>
                 </div>
 
                 <button
                   onClick={() => onLoadPreset('us')}
                   disabled={isLoading}
-                  className="px-4 py-2 bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white font-bold rounded-xl shadow-lg shadow-purple-600/20 transition-all shrink-0 cursor-pointer"
+                  className="px-3 py-1.5 bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white font-semibold rounded transition-colors shrink-0 cursor-pointer"
                 >
                   載入美國資料集
                 </button>
@@ -339,14 +376,14 @@ export const ImportModal: React.FC<ImportModalProps> = ({
             </div>
           ) : (
             /* Custom Tab */
-            <div className="space-y-4">
+            <div className="space-y-3">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 {/* GeoJSON Upload Box */}
-                <div className="p-3 bg-slate-950/80 border border-slate-800 rounded-2xl space-y-2">
+                <div className="p-3 bg-slate-950/80 border border-slate-800 rounded-xl space-y-2">
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1.5 font-bold text-slate-200">
                       <FileCode className="w-4 h-4 text-sky-400" />
-                      <span className="font-bold text-slate-200">1. GeoJSON 地理檔案</span>
+                      <span>1. GeoJSON 地理檔案</span>
                     </div>
                     {geoJsonData && (
                       <span className="text-emerald-400 flex items-center gap-1 font-mono text-[11px]">
@@ -355,10 +392,10 @@ export const ImportModal: React.FC<ImportModalProps> = ({
                     )}
                   </div>
 
-                  <label className="border-2 border-dashed border-slate-700 hover:border-sky-500 rounded-xl p-4 flex flex-col items-center justify-center text-center cursor-pointer transition-colors bg-slate-900/40">
-                    <Globe2 className="w-6 h-6 text-slate-400 mb-1" />
+                  <label className="border border-dashed border-slate-700 hover:border-sky-500 rounded-lg p-3 flex flex-col items-center justify-center text-center cursor-pointer transition-colors bg-slate-900/40">
+                    <Globe2 className="w-5 h-5 text-slate-400 mb-1" />
                     <span className="text-slate-200 font-medium">點擊選取或拖曳 GeoJSON 檔案</span>
-                    <span className="text-slate-500 text-[10px] mt-0.5">.geojson, .json</span>
+                    <span className="text-slate-500 text-[10px] mt-0.5">.geojson, .json (上限 50MB)</span>
                     <input
                       type="file"
                       accept=".geojson,.json,application/json"
@@ -373,18 +410,19 @@ export const ImportModal: React.FC<ImportModalProps> = ({
                     </div>
                   )}
                   {geoError && (
-                    <div className="text-rose-400 text-[11px] flex items-center gap-1">
-                      <AlertCircle className="w-3.5 h-3.5" /> {geoError}
+                    <div className="text-rose-400 text-[11px] flex items-start gap-1 bg-rose-950/50 p-2 rounded border border-rose-800">
+                      <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                      <span>{geoError}</span>
                     </div>
                   )}
                 </div>
 
                 {/* CSV Upload Box */}
-                <div className="p-3 bg-slate-950/80 border border-slate-800 rounded-2xl space-y-2">
+                <div className="p-3 bg-slate-950/80 border border-slate-800 rounded-xl space-y-2">
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1.5 font-bold text-slate-200">
                       <FileSpreadsheet className="w-4 h-4 text-emerald-400" />
-                      <span className="font-bold text-slate-200">2. CSV 數據檔案</span>
+                      <span>2. CSV 數據檔案</span>
                     </div>
                     {csvData && (
                       <span className="text-emerald-400 flex items-center gap-1 font-mono text-[11px]">
@@ -393,10 +431,10 @@ export const ImportModal: React.FC<ImportModalProps> = ({
                     )}
                   </div>
 
-                  <label className="border-2 border-dashed border-slate-700 hover:border-emerald-500 rounded-xl p-4 flex flex-col items-center justify-center text-center cursor-pointer transition-colors bg-slate-900/40">
-                    <FileSpreadsheet className="w-6 h-6 text-slate-400 mb-1" />
+                  <label className="border border-dashed border-slate-700 hover:border-emerald-500 rounded-lg p-3 flex flex-col items-center justify-center text-center cursor-pointer transition-colors bg-slate-900/40">
+                    <FileSpreadsheet className="w-5 h-5 text-slate-400 mb-1" />
                     <span className="text-slate-200 font-medium">點擊選取或拖曳 CSV 數據檔案</span>
-                    <span className="text-slate-500 text-[10px] mt-0.5">支援 UTF-8、自動標題與類型探測</span>
+                    <span className="text-slate-500 text-[10px] mt-0.5">自動去除 BOM、自動偵測逗號/分號</span>
                     <input
                       type="file"
                       accept=".csv,text/csv"
@@ -411,8 +449,9 @@ export const ImportModal: React.FC<ImportModalProps> = ({
                     </div>
                   )}
                   {csvError && (
-                    <div className="text-rose-400 text-[11px] flex items-center gap-1">
-                      <AlertCircle className="w-3.5 h-3.5" /> {csvError}
+                    <div className="text-rose-400 text-[11px] flex items-start gap-1 bg-rose-950/50 p-2 rounded border border-rose-800">
+                      <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                      <span>{csvError}</span>
                     </div>
                   )}
                 </div>
@@ -420,20 +459,20 @@ export const ImportModal: React.FC<ImportModalProps> = ({
 
               {/* Step 3: Key Join Configuration */}
               {geoJsonData && csvData && (
-                <div className="p-4 bg-slate-950/90 border border-slate-800 rounded-2xl space-y-3">
-                  <div className="flex items-center gap-2 text-sky-400 font-bold text-xs">
+                <div className="p-3 bg-slate-950/90 border border-slate-800 rounded-xl space-y-2.5">
+                  <div className="flex items-center gap-1.5 text-sky-400 font-bold text-xs">
                     <Link2 className="w-4 h-4" />
-                    <span>3. 地理代碼合併與欄位對應設定</span>
+                    <span>3. 地理代碼合併設定與欄位對應</span>
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
                     {/* GeoJSON Key */}
                     <div>
                       <label className="text-slate-400 block mb-1">GeoJSON 地區代碼屬性 (圖資鍵值)</label>
                       <select
                         value={selectedGeoKey}
                         onChange={(e) => setSelectedGeoKey(e.target.value)}
-                        className="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-slate-200"
+                        className="w-full bg-slate-800 border border-slate-700 rounded p-1.5 text-slate-200"
                       >
                         {getGeoKeyCandidates(geoJsonData).map((k) => (
                           <option key={k} value={k}>
@@ -449,7 +488,7 @@ export const ImportModal: React.FC<ImportModalProps> = ({
                       <select
                         value={selectedCsvKey}
                         onChange={(e) => setSelectedCsvKey(e.target.value)}
-                        className="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-slate-200"
+                        className="w-full bg-slate-800 border border-slate-700 rounded p-1.5 text-slate-200"
                       >
                         {getCsvKeyCandidates(csvData).map((k) => (
                           <option key={k} value={k}>
@@ -465,9 +504,9 @@ export const ImportModal: React.FC<ImportModalProps> = ({
                       <select
                         value={selectedTimeCol}
                         onChange={(e) => setSelectedTimeCol(e.target.value)}
-                        className="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-slate-200"
+                        className="w-full bg-slate-800 border border-slate-700 rounded p-1.5 text-slate-200"
                       >
-                        <option value="">-- 無時間維度 (靜態資料) --</option>
+                        <option value="">-- 無時間維度 (單一期別) --</option>
                         {csvData.headers.map((h) => (
                           <option key={h} value={h}>
                             {h}
@@ -478,11 +517,11 @@ export const ImportModal: React.FC<ImportModalProps> = ({
 
                     {/* Metric Column */}
                     <div>
-                      <label className="text-slate-400 block mb-1">預設分級設色數值指標</label>
+                      <label className="text-slate-400 block mb-1">分級設色數值指標</label>
                       <select
                         value={selectedMetricCol}
                         onChange={(e) => setSelectedMetricCol(e.target.value)}
-                        className="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-slate-200"
+                        className="w-full bg-slate-800 border border-slate-700 rounded p-1.5 text-slate-200"
                       >
                         {detectNumericColumns(csvData).map((h) => (
                           <option key={h} value={h}>
@@ -495,16 +534,15 @@ export const ImportModal: React.FC<ImportModalProps> = ({
 
                   {/* Join Simulation Diagnosis */}
                   {matchPreview && (
-                    <div className="p-3 bg-slate-900 rounded-xl border border-slate-800 flex items-center justify-between">
-                      <div className="space-y-0.5">
-                        <span className="text-slate-300 font-semibold">智慧匹配探測結果：</span>
-                        <div className="text-slate-400 text-[11px]">
-                          抽樣前 {matchPreview.sampleTotal} 筆中，成功匹配 {matchPreview.matchCount} 筆 (
-                          {matchPreview.pct}%)
-                        </div>
+                    <div className="p-2.5 bg-slate-900 rounded border border-slate-800 flex items-center justify-between">
+                      <div>
+                        <span className="text-slate-300 font-semibold">智慧匹配探測：</span>
+                        <span className="text-slate-400 text-[11px] ml-1">
+                          抽樣前 {matchPreview.sampleTotal} 筆中，成功匹配 {matchPreview.matchCount} 筆
+                        </span>
                       </div>
                       <span
-                        className={`font-mono text-sm font-bold px-2.5 py-1 rounded-lg ${
+                        className={`font-mono text-xs font-bold px-2 py-0.5 rounded ${
                           matchPreview.pct >= 70
                             ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
                             : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
@@ -522,7 +560,7 @@ export const ImportModal: React.FC<ImportModalProps> = ({
                       type="text"
                       value={datasetTitle}
                       onChange={(e) => setDatasetTitle(e.target.value)}
-                      className="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-slate-200"
+                      className="w-full bg-slate-800 border border-slate-700 rounded p-1.5 text-slate-200"
                     />
                   </div>
                 </div>
@@ -532,23 +570,23 @@ export const ImportModal: React.FC<ImportModalProps> = ({
         </div>
 
         {/* Footer */}
-        <div className="p-3 border-t border-slate-800 bg-slate-950/60 flex items-center justify-between">
+        <div className="p-3 border-t border-slate-800 bg-slate-950/70 flex items-center justify-between">
           <span className="text-slate-500 text-[11px]">
-            所有資料皆在瀏覽器端本機運算，不傳送至外部伺服器
+            所有圖資與數據皆在瀏覽器端本機解析，不傳送至外部伺服器
           </span>
 
           <div className="flex items-center gap-2">
             <button
               onClick={onClose}
-              className="px-4 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg cursor-pointer"
+              className="px-3.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded cursor-pointer"
             >
               取消
             </button>
             {activeTab === 'custom' && (
               <button
                 onClick={handleApplyCustom}
-                disabled={!geoJsonData || !csvData || !selectedGeoKey || !selectedCsvKey}
-                className="px-4 py-1.5 bg-sky-600 hover:bg-sky-500 disabled:opacity-50 text-white font-bold rounded-lg cursor-pointer transition-all"
+                disabled={!geoJsonData || !csvData || !selectedGeoKey || !selectedCsvKey || !selectedMetricCol}
+                className="px-4 py-1.5 bg-sky-600 hover:bg-sky-500 disabled:opacity-40 text-white font-semibold rounded cursor-pointer transition-all"
               >
                 套用並探索地圖
               </button>

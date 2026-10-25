@@ -1,5 +1,6 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import Papa from 'papaparse';
+import type { Map as MapLibreMap } from 'maplibre-gl';
 import type {
   CustomFeatureCollection,
   CsvDataset,
@@ -8,14 +9,22 @@ import type {
   PaletteId,
 } from './types';
 import { performDataMerge } from './utils/dataMerge';
+import {
+  saveActiveSession,
+  loadActiveSession,
+  type WorkspaceSession,
+} from './services/storage';
+import { exportMapImage } from './utils/exportUtils';
 import { Header } from './components/Header/Header';
 import { ChoroplethMap } from './components/Map/ChoroplethMap';
 import { Legend } from './components/Legend/Legend';
 import { TimeSlider } from './components/Timeline/TimeSlider';
 import { FilterBar } from './components/Filters/FilterBar';
 import { Leaderboard } from './components/Ranking/Leaderboard';
+import { EChartsAnalytics } from './components/Charts/EChartsAnalytics';
 import { DataTableModal } from './components/Table/DataTableModal';
 import { ImportModal } from './components/Import/ImportModal';
+import { ProjectManagerModal } from './components/Project/ProjectManagerModal';
 import { UnmatchedBanner, UnmatchedMapperModal } from './components/Unmatched/UnmatchedMapperModal';
 import { RegionDetailCard } from './components/Map/RegionDetailCard';
 
@@ -25,6 +34,9 @@ export function App() {
   const [geoJsonData, setGeoJsonData] = useState<CustomFeatureCollection | null>(null);
   const [csvData, setCsvData] = useState<CsvDataset | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+
+  // Map instance ref for snapshot export
+  const mapInstanceRef = useRef<MapLibreMap | null>(null);
 
   // Merge Configuration State
   const [mergeConfig, setMergeConfig] = useState<MergeConfig>({
@@ -47,11 +59,13 @@ export function App() {
   const [selectedBreakIndex, setSelectedBreakIndex] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [rangeFilter, setRangeFilter] = useState<[number, number] | null>(null);
+  const [activeSidePanel, setActiveSidePanel] = useState<'ranking' | 'echarts'>('echarts');
 
   // Modals
   const [isImportModalOpen, setIsImportModalOpen] = useState<boolean>(false);
   const [isTableModalOpen, setIsTableModalOpen] = useState<boolean>(false);
   const [isUnmatchedModalOpen, setIsUnmatchedModalOpen] = useState<boolean>(false);
+  const [isProjectModalOpen, setIsProjectModalOpen] = useState<boolean>(false);
 
   // Load Preset Function
   const loadPreset = useCallback(async (presetId: 'taiwan' | 'world' | 'us') => {
@@ -160,10 +174,72 @@ export function App() {
     }
   }, []);
 
-  // Initial Load (Taiwan Counties)
+  // Initial Load with IndexedDB Auto-Recovery
   useEffect(() => {
-    loadPreset('taiwan');
+    let isCancelled = false;
+    const initialize = async () => {
+      try {
+        const saved = await loadActiveSession();
+        if (!isCancelled && saved && saved.geojson && saved.csv) {
+          setGeoJsonData(saved.geojson);
+          setCsvData(saved.csv);
+          setDatasetTitle(saved.datasetTitle || '還原自 IndexedDB 工作區');
+          setMergeConfig(saved.mergeConfig);
+          setClassificationMethod(saved.classificationMethod || 'jenks');
+          setPaletteId(saved.paletteId || 'viridis');
+          setPaletteReversed(saved.paletteReversed || false);
+          setNumClasses(saved.numClasses || 5);
+          setIsLoading(false);
+          return;
+        }
+      } catch (err) {
+        console.warn('Could not restore from IndexedDB:', err);
+      }
+      if (!isCancelled) {
+        loadPreset('taiwan');
+      }
+    };
+
+    initialize();
+    return () => {
+      isCancelled = true;
+    };
   }, [loadPreset]);
+
+  // Current Workspace Session for Persistence
+  const currentSession: WorkspaceSession = useMemo(() => {
+    return {
+      datasetTitle,
+      geojson: geoJsonData || { type: 'FeatureCollection', features: [] },
+      csv: csvData || { fileName: '', headers: [], rows: [], totalRows: 0 },
+      mergeConfig,
+      classificationMethod,
+      paletteId,
+      paletteReversed,
+      numClasses,
+      updatedAt: Date.now(),
+    };
+  }, [
+    datasetTitle,
+    geoJsonData,
+    csvData,
+    mergeConfig,
+    classificationMethod,
+    paletteId,
+    paletteReversed,
+    numClasses,
+  ]);
+
+  // Debounced Auto-Save to IndexedDB
+  useEffect(() => {
+    if (!geoJsonData || !csvData || isLoading) return;
+
+    const timer = setTimeout(() => {
+      saveActiveSession(currentSession);
+    }, 1200);
+
+    return () => clearTimeout(timer);
+  }, [currentSession, geoJsonData, csvData, isLoading]);
 
   // Execute Merge when Data or Merge Config changes
   const mergeResult = useMemo(() => {
@@ -220,6 +296,22 @@ export function App() {
     });
   };
 
+  // Restore session from Project Manager Modal
+  const handleRestoreSession = (session: WorkspaceSession) => {
+    setGeoJsonData(session.geojson);
+    setCsvData(session.csv);
+    setDatasetTitle(session.datasetTitle);
+    setMergeConfig(session.mergeConfig);
+    setClassificationMethod(session.classificationMethod);
+    setPaletteId(session.paletteId);
+    setPaletteReversed(session.paletteReversed);
+    setNumClasses(session.numClasses);
+    setSelectedRegionId(null);
+    setSelectedBreakIndex(null);
+    setSearchQuery('');
+    setRangeFilter(null);
+  };
+
   // Custom Dataset Apply Handler
   const handleApplyCustomDataset = (
     geojson: CustomFeatureCollection,
@@ -248,16 +340,18 @@ export function App() {
         onOpenImport={() => setIsImportModalOpen(true)}
         onOpenTable={() => setIsTableModalOpen(true)}
         onOpenUnmatched={() => setIsUnmatchedModalOpen(true)}
+        onOpenProjectManager={() => setIsProjectModalOpen(true)}
         geojson={mergeResult?.mergedGeoJSON ?? { type: 'FeatureCollection', features: [] }}
         onLoadPreset={loadPreset}
+        onExportPng={() => exportMapImage(mapInstanceRef.current)}
       />
 
       {/* 2. Main Geospatial Workspace */}
       <div className="relative flex-1 w-full h-full overflow-hidden">
         {isLoading || !mergeResult ? (
-          <div className="w-full h-full flex flex-col items-center justify-center bg-slate-950 text-slate-400 gap-3">
-            <div className="w-10 h-10 border-4 border-sky-500/20 border-t-sky-400 rounded-full animate-spin" />
-            <p className="font-semibold text-sm">正在載入地理向量圖資與合併數據...</p>
+          <div className="w-full h-full flex flex-col items-center justify-center bg-slate-950 text-slate-400 gap-2">
+            <div className="w-8 h-8 border-3 border-sky-500/20 border-t-sky-400 rounded-full animate-spin" />
+            <p className="font-semibold text-xs">載入地理向量圖資與計算分級設色中...</p>
           </div>
         ) : (
           <>
@@ -271,10 +365,13 @@ export function App() {
               selectedBreakIndex={selectedBreakIndex}
               searchFilter={searchQuery}
               rangeFilter={rangeFilter}
+              onMapReady={(map) => {
+                mapInstanceRef.current = map;
+              }}
             />
 
             {/* Floating Top Filter Bar & Unmatched Warning */}
-            <div className="absolute top-4 left-4 right-16 md:right-auto md:w-[620px] z-10 space-y-2 pointer-events-auto">
+            <div className="absolute top-3 left-3 right-16 md:right-auto md:w-[600px] z-10 space-y-2 pointer-events-auto">
               <FilterBar
                 metricColumns={mergeResult.allMetricColumns}
                 selectedMetric={mergeConfig.metricColumn}
@@ -307,20 +404,55 @@ export function App() {
               />
             )}
 
-            {/* Floating Right Side: Regional Leaderboard & Rankings */}
-            <div className="absolute top-20 right-4 z-10 pointer-events-auto">
-              <Leaderboard
-                geojson={mergeResult.mergedGeoJSON}
-                metricColumn={mergeConfig.metricColumn}
-                stats={mergeResult.activeStats}
-                selectedRegionId={selectedRegionId}
-                onSelectRegion={setSelectedRegionId}
-              />
+            {/* Floating Right Dock: ECharts Analytics and Ranking */}
+            <div className="absolute top-16 right-3 z-10 flex flex-col items-end gap-2 pointer-events-auto">
+              {/* Tab selector between Leaderboard and ECharts */}
+              <div className="bg-slate-900 border border-slate-700 rounded p-0.5 flex gap-0.5 shadow-md text-[11px]">
+                <button
+                  onClick={() => setActiveSidePanel('echarts')}
+                  className={`px-2 py-0.5 rounded cursor-pointer ${
+                    activeSidePanel === 'echarts' ? 'bg-sky-600 text-white font-bold' : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  ECharts 分析圖
+                </button>
+                <button
+                  onClick={() => setActiveSidePanel('ranking')}
+                  className={`px-2 py-0.5 rounded cursor-pointer ${
+                    activeSidePanel === 'ranking' ? 'bg-sky-600 text-white font-bold' : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  排行清單
+                </button>
+              </div>
+
+              {activeSidePanel === 'echarts' ? (
+                <EChartsAnalytics
+                  geojson={mergeResult.mergedGeoJSON}
+                  csv={csvData}
+                  metricColumn={mergeConfig.metricColumn}
+                  timeColumn={mergeConfig.timeColumn}
+                  selectedTime={mergeConfig.selectedTime}
+                  timeValues={mergeResult.timeValues}
+                  breaks={mergeResult.currentBreaks}
+                  stats={mergeResult.activeStats}
+                  selectedRegionId={selectedRegionId}
+                  onSelectRegion={setSelectedRegionId}
+                />
+              ) : (
+                <Leaderboard
+                  geojson={mergeResult.mergedGeoJSON}
+                  metricColumn={mergeConfig.metricColumn}
+                  stats={mergeResult.activeStats}
+                  selectedRegionId={selectedRegionId}
+                  onSelectRegion={setSelectedRegionId}
+                />
+              )}
             </div>
 
             {/* Floating Bottom Left: Multi-Period Time Slider */}
             {mergeResult.timeValues.length > 1 && (
-              <div className="absolute bottom-6 left-4 z-10 w-96 max-w-[calc(100vw-32px)] pointer-events-auto">
+              <div className="absolute bottom-5 left-3 z-10 w-96 max-w-[calc(100vw-24px)] pointer-events-auto">
                 <TimeSlider
                   timeValues={mergeResult.timeValues}
                   selectedTime={mergeConfig.selectedTime}
@@ -331,7 +463,7 @@ export function App() {
             )}
 
             {/* Floating Bottom Right: Interactive Legend & Classification */}
-            <div className="absolute bottom-6 right-4 z-10 w-72 max-w-[calc(100vw-32px)] pointer-events-auto">
+            <div className="absolute bottom-5 right-3 z-10 w-72 max-w-[calc(100vw-24px)] pointer-events-auto">
               <Legend
                 breaks={mergeResult.currentBreaks}
                 metricName={mergeConfig.metricColumn}
@@ -392,6 +524,14 @@ export function App() {
           onRemoveAlias={handleRemoveAlias}
         />
       )}
+
+      {/* Project Manager & IndexedDB Persistence Modal */}
+      <ProjectManagerModal
+        isOpen={isProjectModalOpen}
+        onClose={() => setIsProjectModalOpen(false)}
+        currentSession={currentSession}
+        onLoadSession={handleRestoreSession}
+      />
     </div>
   );
 }

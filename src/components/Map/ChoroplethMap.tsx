@@ -27,6 +27,7 @@ interface ChoroplethMapProps {
   selectedBreakIndex: number | null;
   searchFilter: string;
   rangeFilter: [number, number] | null;
+  onMapReady?: (map: MapLibreMap) => void;
 }
 
 export const ChoroplethMap: React.FC<ChoroplethMapProps> = ({
@@ -38,6 +39,7 @@ export const ChoroplethMap: React.FC<ChoroplethMapProps> = ({
   selectedBreakIndex,
   searchFilter,
   rangeFilter,
+  onMapReady,
 }) => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
@@ -270,6 +272,7 @@ export const ChoroplethMap: React.FC<ChoroplethMapProps> = ({
       });
 
       fitToDataBounds();
+      onMapReady?.(map);
     });
 
     return () => {
@@ -353,8 +356,8 @@ export const ChoroplethMap: React.FC<ChoroplethMapProps> = ({
       {/* MapLibre DOM Node */}
       <div ref={mapContainerRef} className="w-full h-full" />
 
-      {/* Map Control Buttons (Floating Top Right) */}
-      <div className="absolute top-4 right-4 flex flex-col gap-2 z-20">
+      {/* Map Control Buttons (Floating Top Left beneath filter bar) */}
+      <div className="absolute top-28 left-3 flex flex-col gap-2 z-20">
         {/* Basemap Switcher */}
         <div className="relative">
           <button
