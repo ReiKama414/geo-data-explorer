@@ -31,7 +31,7 @@ test.describe('Geo Data Explorer E2E Verification', () => {
     await metricSelect.selectOption('population');
 
     // Verify legend metric title updates
-    const legendHeader = page.locator('span.text-xs.font-bold.text-slate-100');
+    const legendHeader = page.getByTestId('legend-metric-title');
     await expect(legendHeader).toHaveText('population');
 
     // Search for Taipei
@@ -59,7 +59,7 @@ test.describe('Geo Data Explorer E2E Verification', () => {
     await btn2020.click();
 
     // Verify current year badge reflects 2020
-    const timeBadge = page.locator('span.font-mono.text-sm.font-bold');
+    const timeBadge = page.getByTestId('time-slider-badge');
     await expect(timeBadge).toHaveText('2020');
   });
 

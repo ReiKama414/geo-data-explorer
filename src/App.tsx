@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import Papa from 'papaparse';
 import type { Map as MapLibreMap } from 'maplibre-gl';
+import { X } from 'lucide-react';
 import type {
   CustomFeatureCollection,
   CsvDataset,
@@ -14,6 +15,7 @@ import {
   loadActiveSession,
   type WorkspaceSession,
 } from './services/storage';
+import { useTheme } from './services/theme';
 import { exportMapImage } from './utils/exportUtils';
 import { Header } from './components/Header/Header';
 import { ChoroplethMap } from './components/Map/ChoroplethMap';
@@ -29,6 +31,9 @@ import { UnmatchedBanner, UnmatchedMapperModal } from './components/Unmatched/Un
 import { RegionDetailCard } from './components/Map/RegionDetailCard';
 
 export function App() {
+  // Theme hook
+  const { theme, resolvedTheme, setTheme } = useTheme();
+
   // Core Data States
   const [datasetTitle, setDatasetTitle] = useState<string>('台灣各縣市發展指標');
   const [geoJsonData, setGeoJsonData] = useState<CustomFeatureCollection | null>(null);
@@ -59,7 +64,8 @@ export function App() {
   const [selectedBreakIndex, setSelectedBreakIndex] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [rangeFilter, setRangeFilter] = useState<[number, number] | null>(null);
-  const [activeSidePanel, setActiveSidePanel] = useState<'ranking' | 'echarts'>('echarts');
+  const [activeSidePanel, setActiveSidePanel] = useState<'echarts' | 'ranking' | 'inspector'>('echarts');
+  const [mobileSidePanelOpen, setMobileSidePanelOpen] = useState<boolean>(false);
 
   // Modals
   const [isImportModalOpen, setIsImportModalOpen] = useState<boolean>(false);
@@ -274,6 +280,19 @@ export function App() {
     );
   }, [mergeResult, selectedRegionId]);
 
+  // Handler for region selection
+  const handleSelectRegion = useCallback((id: string | number | null) => {
+    setSelectedRegionId(id);
+    if (id !== null) {
+      setActiveSidePanel('inspector');
+      if (typeof window !== 'undefined' && window.innerWidth < 1024) {
+        setMobileSidePanelOpen(true);
+      }
+    } else {
+      setActiveSidePanel((prev) => (prev === 'inspector' ? 'echarts' : prev));
+    }
+  }, []);
+
   // Alias Mapping Update Handlers
   const handleUpdateAlias = (csvKeyVal: string, targetGeoKeyVal: string) => {
     setMergeConfig((prev) => ({
@@ -330,7 +349,7 @@ export function App() {
   };
 
   return (
-    <div className="w-screen h-screen flex flex-col bg-slate-950 text-slate-100 overflow-hidden font-sans select-none">
+    <div className="w-full h-screen flex flex-col bg-slate-100 dark:bg-slate-950 text-slate-800 dark:text-slate-100 overflow-hidden font-sans select-none">
       {/* 1. Header Navigation Bar */}
       <Header
         datasetTitle={datasetTitle}
@@ -341,16 +360,20 @@ export function App() {
         onOpenTable={() => setIsTableModalOpen(true)}
         onOpenUnmatched={() => setIsUnmatchedModalOpen(true)}
         onOpenProjectManager={() => setIsProjectModalOpen(true)}
+        onOpenAnalytics={() => setMobileSidePanelOpen(true)}
         geojson={mergeResult?.mergedGeoJSON ?? { type: 'FeatureCollection', features: [] }}
         onLoadPreset={loadPreset}
         onExportPng={() => exportMapImage(mapInstanceRef.current)}
+        theme={theme}
+        resolvedTheme={resolvedTheme}
+        onSetTheme={setTheme}
       />
 
       {/* 2. Main Geospatial Workspace */}
-      <div className="relative flex-1 w-full h-full overflow-hidden">
+      <div className="relative flex-1 w-full h-full overflow-hidden min-w-0">
         {isLoading || !mergeResult ? (
-          <div className="w-full h-full flex flex-col items-center justify-center bg-slate-950 text-slate-400 gap-2">
-            <div className="w-8 h-8 border-3 border-sky-500/20 border-t-sky-400 rounded-full animate-spin" />
+          <div className="w-full h-full flex flex-col items-center justify-center bg-slate-100 dark:bg-slate-950 text-slate-500 dark:text-slate-400 gap-2">
+            <div className="w-8 h-8 border-3 border-slate-300 dark:border-sky-500/20 border-t-slate-800 dark:border-t-sky-400 rounded-full animate-spin" />
             <p className="font-semibold text-xs">載入地理向量圖資與計算分級設色中...</p>
           </div>
         ) : (
@@ -361,17 +384,18 @@ export function App() {
               breaks={mergeResult.currentBreaks}
               metricColumn={mergeConfig.metricColumn}
               selectedRegionId={selectedRegionId}
-              onSelectRegion={setSelectedRegionId}
+              onSelectRegion={handleSelectRegion}
               selectedBreakIndex={selectedBreakIndex}
               searchFilter={searchQuery}
               rangeFilter={rangeFilter}
+              resolvedTheme={resolvedTheme}
               onMapReady={(map) => {
                 mapInstanceRef.current = map;
               }}
             />
 
             {/* Floating Top Filter Bar & Unmatched Warning */}
-            <div className="absolute top-3 left-3 right-16 md:right-auto md:w-[600px] z-10 space-y-2 pointer-events-auto">
+            <div className="absolute top-3 left-3 right-16 md:right-auto md:w-[620px] z-10 space-y-2 pointer-events-auto max-w-[calc(100vw-24px)]">
               <FilterBar
                 metricColumns={mergeResult.allMetricColumns}
                 selectedMetric={mergeConfig.metricColumn}
@@ -395,38 +419,57 @@ export function App() {
               )}
             </div>
 
-            {/* Selected Region Detailed Inspector Card */}
-            {selectedFeature && (
-              <RegionDetailCard
-                feature={selectedFeature}
-                metricColumn={mergeConfig.metricColumn}
-                onClose={() => setSelectedRegionId(null)}
-              />
-            )}
-
-            {/* Floating Right Dock: ECharts Analytics and Ranking */}
-            <div className="absolute top-16 right-3 z-10 flex flex-col items-end gap-2 pointer-events-auto">
-              {/* Tab selector between Leaderboard and ECharts */}
-              <div className="bg-slate-900 border border-slate-700 rounded p-0.5 flex gap-0.5 shadow-md text-[11px]">
+            {/* Floating Desktop Right Dock: ECharts Analytics, Ranking and Region Inspector */}
+            <div
+              data-testid="desktop-right-dock"
+              className="hidden lg:flex absolute top-16 right-3 z-10 flex-col items-end gap-2 pointer-events-auto max-w-[calc(100vw-24px)]"
+            >
+              {/* Tab selector */}
+              <div className="bg-white/95 dark:bg-slate-900/95 border border-slate-200 dark:border-slate-750 rounded-lg p-0.5 flex gap-0.5 shadow-md text-[11px] backdrop-blur-xs transition-colors">
+                {selectedFeature && (
+                  <button
+                    onClick={() => setActiveSidePanel('inspector')}
+                    className={`px-2.5 py-1 rounded-md cursor-pointer transition-colors flex items-center gap-1 ${
+                      activeSidePanel === 'inspector'
+                        ? 'bg-slate-900 dark:bg-sky-600 text-white font-bold shadow-xs'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                    }`}
+                  >
+                    <span>📍 區域詳情</span>
+                  </button>
+                )}
                 <button
                   onClick={() => setActiveSidePanel('echarts')}
-                  className={`px-2 py-0.5 rounded cursor-pointer ${
-                    activeSidePanel === 'echarts' ? 'bg-sky-600 text-white font-bold' : 'text-slate-400 hover:text-white'
+                  className={`px-2.5 py-1 rounded-md cursor-pointer transition-colors ${
+                    activeSidePanel === 'echarts'
+                      ? 'bg-slate-900 dark:bg-sky-600 text-white font-bold shadow-xs'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
                   }`}
                 >
                   ECharts 分析圖
                 </button>
                 <button
                   onClick={() => setActiveSidePanel('ranking')}
-                  className={`px-2 py-0.5 rounded cursor-pointer ${
-                    activeSidePanel === 'ranking' ? 'bg-sky-600 text-white font-bold' : 'text-slate-400 hover:text-white'
+                  className={`px-2.5 py-1 rounded-md cursor-pointer transition-colors ${
+                    activeSidePanel === 'ranking'
+                      ? 'bg-slate-900 dark:bg-sky-600 text-white font-bold shadow-xs'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
                   }`}
                 >
                   排行清單
                 </button>
               </div>
 
-              {activeSidePanel === 'echarts' ? (
+              {activeSidePanel === 'inspector' && selectedFeature ? (
+                <RegionDetailCard
+                  feature={selectedFeature}
+                  metricColumn={mergeConfig.metricColumn}
+                  onClose={() => {
+                    setSelectedRegionId(null);
+                    setActiveSidePanel('echarts');
+                  }}
+                />
+              ) : activeSidePanel === 'echarts' ? (
                 <EChartsAnalytics
                   geojson={mergeResult.mergedGeoJSON}
                   csv={csvData}
@@ -437,7 +480,8 @@ export function App() {
                   breaks={mergeResult.currentBreaks}
                   stats={mergeResult.activeStats}
                   selectedRegionId={selectedRegionId}
-                  onSelectRegion={setSelectedRegionId}
+                  onSelectRegion={handleSelectRegion}
+                  theme={resolvedTheme}
                 />
               ) : (
                 <Leaderboard
@@ -445,40 +489,139 @@ export function App() {
                   metricColumn={mergeConfig.metricColumn}
                   stats={mergeResult.activeStats}
                   selectedRegionId={selectedRegionId}
-                  onSelectRegion={setSelectedRegionId}
+                  onSelectRegion={handleSelectRegion}
                 />
               )}
             </div>
 
-            {/* Floating Bottom Left: Multi-Period Time Slider */}
-            {mergeResult.timeValues.length > 1 && (
-              <div className="absolute bottom-5 left-3 z-10 w-96 max-w-[calc(100vw-24px)] pointer-events-auto">
-                <TimeSlider
-                  timeValues={mergeResult.timeValues}
-                  selectedTime={mergeConfig.selectedTime}
-                  onTimeChange={(t) => setMergeConfig((prev) => ({ ...prev, selectedTime: t }))}
-                  timeColumnName={mergeConfig.timeColumn || '時間'}
-                />
+            {/* Mobile Modal Drawer for Analytics & Inspector */}
+            {mobileSidePanelOpen && (
+              <div className="lg:hidden fixed inset-0 z-40 bg-black/60 backdrop-blur-xs flex flex-col justify-end p-2 sm:p-4">
+                <div
+                  data-testid="mobile-analytics-modal"
+                  className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl p-3 max-h-[85vh] flex flex-col overflow-hidden max-w-[calc(100vw-16px)] mx-auto w-full"
+                >
+                  <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-200 dark:border-slate-800">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <span data-testid="mobile-analytics-title" className="font-bold text-xs text-slate-900 dark:text-white truncate">
+                        資料統計與排行
+                      </span>
+                      <div className="flex items-center gap-1 shrink-0">
+                        {selectedFeature && (
+                          <button
+                            onClick={() => setActiveSidePanel('inspector')}
+                            className={`px-2 py-0.5 rounded text-[11px] font-semibold cursor-pointer transition-colors ${
+                              activeSidePanel === 'inspector'
+                                ? 'bg-slate-900 dark:bg-sky-600 text-white'
+                                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                            }`}
+                          >
+                            詳情
+                          </button>
+                        )}
+                        <button
+                          data-testid="mobile-tab-echarts"
+                          onClick={() => setActiveSidePanel('echarts')}
+                          className={`px-2 py-0.5 rounded text-[11px] font-semibold cursor-pointer transition-colors ${
+                            activeSidePanel === 'echarts'
+                              ? 'bg-slate-900 dark:bg-sky-600 text-white'
+                              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                          }`}
+                        >
+                          圖表
+                        </button>
+                        <button
+                          data-testid="mobile-tab-ranking"
+                          onClick={() => setActiveSidePanel('ranking')}
+                          className={`px-2 py-0.5 rounded text-[11px] font-semibold cursor-pointer transition-colors ${
+                            activeSidePanel === 'ranking'
+                              ? 'bg-slate-900 dark:bg-sky-600 text-white'
+                              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                          }`}
+                        >
+                          排行
+                        </button>
+                      </div>
+                    </div>
+                    <button
+                      data-testid="close-mobile-analytics"
+                      aria-label="關閉統計圖表"
+                      onClick={() => setMobileSidePanelOpen(false)}
+                      className="p-1.5 rounded-lg text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer shrink-0"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                  <div className="flex-1 overflow-y-auto overflow-x-hidden min-w-0">
+                    {activeSidePanel === 'inspector' && selectedFeature ? (
+                      <RegionDetailCard
+                        feature={selectedFeature}
+                        metricColumn={mergeConfig.metricColumn}
+                        onClose={() => {
+                          setSelectedRegionId(null);
+                          setActiveSidePanel('echarts');
+                        }}
+                      />
+                    ) : activeSidePanel === 'echarts' ? (
+                      <EChartsAnalytics
+                        geojson={mergeResult.mergedGeoJSON}
+                        csv={csvData}
+                        metricColumn={mergeConfig.metricColumn}
+                        timeColumn={mergeConfig.timeColumn}
+                        selectedTime={mergeConfig.selectedTime}
+                        timeValues={mergeResult.timeValues}
+                        breaks={mergeResult.currentBreaks}
+                        stats={mergeResult.activeStats}
+                        selectedRegionId={selectedRegionId}
+                        onSelectRegion={handleSelectRegion}
+                        theme={resolvedTheme}
+                      />
+                    ) : (
+                      <Leaderboard
+                        geojson={mergeResult.mergedGeoJSON}
+                        metricColumn={mergeConfig.metricColumn}
+                        stats={mergeResult.activeStats}
+                        selectedRegionId={selectedRegionId}
+                        onSelectRegion={handleSelectRegion}
+                      />
+                    )}
+                  </div>
+                </div>
               </div>
             )}
 
-            {/* Floating Bottom Right: Interactive Legend & Classification */}
-            <div className="absolute bottom-5 right-3 z-10 w-72 max-w-[calc(100vw-24px)] pointer-events-auto">
-              <Legend
-                breaks={mergeResult.currentBreaks}
-                metricName={mergeConfig.metricColumn}
-                classificationMethod={classificationMethod}
-                onChangeMethod={setClassificationMethod}
-                paletteId={paletteId}
-                onChangePalette={setPaletteId}
-                paletteReversed={paletteReversed}
-                onToggleReversePalette={() => setPaletteReversed(!paletteReversed)}
-                numClasses={numClasses}
-                onChangeNumClasses={setNumClasses}
-                selectedBreakIndex={selectedBreakIndex}
-                onSelectBreak={setSelectedBreakIndex}
-                unmatchedCount={mergeResult.unmatchedGeoFeatures.length}
-              />
+            {/* Bottom Geospatial Controls: Stacked on mobile via flexbox for zero collision, independent on desktop */}
+            <div className="absolute bottom-3 left-3 right-3 sm:bottom-auto sm:left-auto sm:right-auto sm:contents z-10 pointer-events-none flex flex-col items-stretch sm:items-end gap-2">
+              {/* Interactive Legend & Classification */}
+              <div className="w-full sm:w-72 sm:absolute sm:bottom-5 sm:right-3 max-w-[calc(100vw-24px)] pointer-events-auto">
+                <Legend
+                  breaks={mergeResult.currentBreaks}
+                  metricName={mergeConfig.metricColumn}
+                  classificationMethod={classificationMethod}
+                  onChangeMethod={setClassificationMethod}
+                  paletteId={paletteId}
+                  onChangePalette={setPaletteId}
+                  paletteReversed={paletteReversed}
+                  onToggleReversePalette={() => setPaletteReversed(!paletteReversed)}
+                  numClasses={numClasses}
+                  onChangeNumClasses={setNumClasses}
+                  selectedBreakIndex={selectedBreakIndex}
+                  onSelectBreak={setSelectedBreakIndex}
+                  unmatchedCount={mergeResult.unmatchedGeoFeatures.length}
+                />
+              </div>
+
+              {/* Multi-Period Time Slider */}
+              {mergeResult.timeValues.length > 1 && (
+                <div className="w-full sm:w-96 sm:absolute sm:bottom-5 sm:left-3 max-w-[calc(100vw-24px)] pointer-events-auto">
+                  <TimeSlider
+                    timeValues={mergeResult.timeValues}
+                    selectedTime={mergeConfig.selectedTime}
+                    onTimeChange={(t) => setMergeConfig((prev) => ({ ...prev, selectedTime: t }))}
+                    timeColumnName={mergeConfig.timeColumn || '時間'}
+                  />
+                </div>
+              )}
             </div>
           </>
         )}
