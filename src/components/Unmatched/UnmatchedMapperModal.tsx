@@ -221,8 +221,8 @@ export const UnmatchedBanner: React.FC<{
   if (unmatchedCount === 0) return null;
 
   return (
-    <div className="w-full max-w-[calc(100vw-24px)] md:max-w-[620px] bg-amber-50 dark:bg-amber-950/80 border border-amber-300 dark:border-amber-600/50 rounded-xl px-2.5 sm:px-3 py-1.5 sm:py-2 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 shadow-xs text-xs">
-      <div className="flex items-center gap-2 text-amber-800 dark:text-amber-200 min-w-0">
+    <div className="w-full max-w-[calc(100vw-24px)] md:max-w-[620px] bg-amber-50 dark:bg-amber-950/80 border border-amber-300 dark:border-amber-600/50 rounded-xl px-3 sm:px-3.5 py-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 shadow-xs text-xs">
+      <div className="flex items-center gap-2.5 text-amber-800 dark:text-amber-200 min-w-0 pr-1">
         <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
         <span className="truncate">
           發現 <strong className="font-mono font-bold text-amber-900 dark:text-amber-300">{unmatchedCount}</strong>{' '}
