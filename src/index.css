@@ -82,3 +82,10 @@ html:not(.dark) .maplibregl-ctrl-attrib {
   border-radius: 4px !important;
   border: 1px solid #e2e8f0 !important;
 }
+
+.maplibregl-map,
+.maplibregl-canvas-container,
+.maplibregl-canvas {
+  width: 100% !important;
+  height: 100% !important;
+}

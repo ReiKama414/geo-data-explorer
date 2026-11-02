@@ -44,6 +44,44 @@ function getFitPadding(map: MapLibreMap, base: number) {
   return { top: pad, bottom: pad, left: pad, right: rightPad };
 }
 
+/** 全球或近全球邊界：fitBounds 在寬螢幕會觸發 renderWorldCopies 並出現並排重複地圖 */
+function isGlobalBounds(bounds: [number, number, number, number]) {
+  const [minLng, minLat, maxLng, maxLat] = bounds;
+  const lngSpan = maxLng - minLng;
+  const latSpan = maxLat - minLat;
+  return lngSpan >= 280 || (lngSpan >= 200 && latSpan >= 100);
+}
+
+function applyDataViewport(
+  map: MapLibreMap,
+  bounds: [number, number, number, number],
+  options?: { maxZoom?: number; duration?: number; paddingBase?: number }
+) {
+  const padding = getFitPadding(map, options?.paddingBase ?? 60);
+  const duration = options?.duration ?? 1000;
+
+  if (isGlobalBounds(bounds)) {
+    const [minLng, minLat, maxLng, maxLat] = bounds;
+    let centerLng = (minLng + maxLng) / 2;
+    if (centerLng > 180) centerLng -= 360;
+    if (centerLng < -180) centerLng += 360;
+    const centerLat = Math.max(-55, Math.min(55, (minLat + maxLat) / 2));
+    map.easeTo({
+      center: [centerLng, centerLat],
+      zoom: 1.35,
+      padding,
+      duration,
+    });
+    return;
+  }
+
+  map.fitBounds(bounds, {
+    padding,
+    maxZoom: options?.maxZoom ?? 12,
+    duration,
+  });
+}
+
 // 加入（或在換底圖後重新加入）分級設色圖層
 function addChoroplethLayers(map: MapLibreMap, data: CustomFeatureCollection) {
   if (!map.getSource(SOURCE_ID)) {
@@ -233,12 +271,7 @@ export const ChoroplethMap: React.FC<ChoroplethMapProps> = ({
     if (!map) return;
     const b = getBounds(geojson);
     if (b) {
-      // 在小螢幕 / 低高度視窗上縮減 padding，避免 padding 大於容器導致 fitBounds 失敗
-      map.fitBounds(b, {
-        padding: getFitPadding(map, 60),
-        maxZoom: 12,
-        duration: 1000,
-      });
+      applyDataViewport(map, b, { maxZoom: 12, duration: 1000, paddingBase: 60 });
     }
   }, [geojson, getBounds]);
 
@@ -271,11 +304,7 @@ export const ChoroplethMap: React.FC<ChoroplethMapProps> = ({
     if (!feat) return;
     const b = getBounds({ type: 'FeatureCollection', features: [feat] } as CustomFeatureCollection);
     if (!b) return;
-    map.fitBounds(b, {
-      padding: getFitPadding(map, 80),
-      maxZoom: 9,
-      duration: 800,
-    });
+    applyDataViewport(map, b, { maxZoom: 9, duration: 800, paddingBase: 80 });
   }, [selectedRegionId, getBounds]);
 
   // Initialize MapLibre
@@ -287,6 +316,7 @@ export const ChoroplethMap: React.FC<ChoroplethMapProps> = ({
       style: createRasterStyle(appliedBasemapRef.current),
       center: [120.9605, 23.6978], // Default Taiwan
       zoom: 6.5,
+      renderWorldCopies: false,
       attributionControl: {
         compact: false,
       },
@@ -372,6 +402,18 @@ export const ChoroplethMap: React.FC<ChoroplethMapProps> = ({
       mapRef.current = null;
     };
   }, []); // Run once on mount
+
+  // 面板 / 視窗尺寸變更時同步 MapLibre canvas，避免圖磚錯位或重複
+  useEffect(() => {
+    const container = mapContainerRef.current;
+    const map = mapRef.current;
+    if (!container || !map || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(() => {
+      map.resize();
+    });
+    ro.observe(container);
+    return () => ro.disconnect();
+  }, []);
 
   // Update basemap when selection changes
   useEffect(() => {
