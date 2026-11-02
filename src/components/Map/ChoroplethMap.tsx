@@ -44,12 +44,26 @@ function getFitPadding(map: MapLibreMap, base: number) {
   return { top: pad, bottom: pad, left: pad, right: rightPad };
 }
 
-/** 全球或近全球邊界：fitBounds 在寬螢幕會觸發 renderWorldCopies 並出現並排重複地圖 */
+/** 全球或近全球邊界：對 360° 做 fitBounds 會算出過低的 zoom，寬螢幕上同時看到多份世界而像破版；改用手動 overview zoom，仍保留 renderWorldCopies 以便拖曳環繞。 */
 function isGlobalBounds(bounds: [number, number, number, number]) {
   const [minLng, minLat, maxLng, maxLat] = bounds;
   const lngSpan = maxLng - minLng;
   const latSpan = maxLat - minLat;
   return lngSpan >= 280 || (lngSpan >= 200 && latSpan >= 100);
+}
+
+/** 依容器寬高推算「單一世界」概覽 zoom（Mercator：zoom 0 時世界寬 ≈ 512px） */
+function computeGlobalOverviewZoom(
+  map: MapLibreMap,
+  padding: { top: number; bottom: number; left: number; right: number }
+) {
+  const { clientWidth: w, clientHeight: h } = map.getContainer();
+  const effW = Math.max(96, w - padding.left - padding.right);
+  const effH = Math.max(96, h - padding.top - padding.bottom);
+  const worldPxAtZoom0 = 512;
+  const zoomForWidth = Math.log2(effW / worldPxAtZoom0);
+  const zoomForHeight = Math.log2(effH / worldPxAtZoom0) - 0.2;
+  return Math.max(0.85, Math.min(zoomForWidth, zoomForHeight, 2.35));
 }
 
 function applyDataViewport(
@@ -65,10 +79,10 @@ function applyDataViewport(
     let centerLng = (minLng + maxLng) / 2;
     if (centerLng > 180) centerLng -= 360;
     if (centerLng < -180) centerLng += 360;
-    const centerLat = Math.max(-55, Math.min(55, (minLat + maxLat) / 2));
+    const centerLat = Math.max(-45, Math.min(50, (minLat + maxLat) / 2));
     map.easeTo({
       center: [centerLng, centerLat],
-      zoom: 1.35,
+      zoom: computeGlobalOverviewZoom(map, padding),
       padding,
       duration,
     });
@@ -316,7 +330,8 @@ export const ChoroplethMap: React.FC<ChoroplethMapProps> = ({
       style: createRasterStyle(appliedBasemapRef.current),
       center: [120.9605, 23.6978], // Default Taiwan
       zoom: 6.5,
-      renderWorldCopies: false,
+      // 保留預設 true：拖曳可無縫環繞地球；破版來自 360° fitBounds，非此選項
+      renderWorldCopies: true,
       attributionControl: {
         compact: false,
       },
