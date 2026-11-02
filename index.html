@@ -6,8 +6,19 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="Geo Data Explorer 地理資料分析網站 - 支援 GeoJSON 與 CSV 匯入、依地區代碼合併資料、分級設色地圖、圖例、篩選、區域排名、時間切換與資料表。" />
     <title>Geo Data Explorer | 地理資料分析與分級設色平台</title>
+    <script>
+      // 在首次繪製前套用主題，避免淺色模式使用者看到深色閃爍 (FOUC)
+      (function () {
+        try {
+          var saved = localStorage.getItem('geo_data_explorer_theme');
+          var mode = saved === 'light' || saved === 'dark' ? saved : 'system';
+          var dark = mode === 'dark' || (mode === 'system' && (!window.matchMedia || window.matchMedia('(prefers-color-scheme: dark)').matches));
+          if (dark) document.documentElement.classList.add('dark');
+        } catch (e) {}
+      })();
+    </script>
   </head>
-  <body class="bg-slate-950 text-slate-100 overflow-hidden">
+  <body class="bg-slate-100 text-slate-900 dark:bg-slate-950 dark:text-slate-100 overflow-hidden">
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

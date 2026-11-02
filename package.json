@@ -2,6 +2,8 @@
   "name": "geo-data-explorer",
   "private": true,
   "version": "0.0.0",
+  "description": "Pure-frontend geospatial analysis and choropleth studio with spatial joins and multi-period timelines",
+  "homepage": "https://reikama414.github.io/geo-data-explorer/",
   "license": "UNLICENSED",
   "type": "module",
   "scripts": {

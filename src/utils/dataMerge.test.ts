@@ -140,6 +140,25 @@ describe('Data Merge & Geo Spatial Joining Unit Tests', () => {
     expect(result.mergedGeoJSON.features.length).toBe(3);
   });
 
+  it('assigns a stable, unique _idKey to every feature (shared by map / ranking / chart / table)', () => {
+    const config: MergeConfig = {
+      geoKey: 'COUNTYCODE',
+      csvKey: 'county_code',
+      timeColumn: 'year',
+      selectedTime: '2024',
+      metricColumn: 'median_income',
+      aliasMap: {},
+    };
+    const result = performDataMerge(sampleGeoJSON, sampleCsv, config, 'jenks', 'viridis', false, 3);
+    const ids = result.mergedGeoJSON.features.map((f) => f.properties._idKey);
+    expect(ids.every((id) => typeof id === 'string' && id.length > 0)).toBe(true);
+    expect(new Set(ids).size).toBe(ids.length);
+    // 未匹配幾何的 id 必須能對應到同一個 _idKey，才能從資料表「於地圖檢視」
+    result.unmatchedGeoFeatures.forEach((u) => {
+      expect(ids).toContain(String(u.id));
+    });
+  });
+
   it('supports manual alias mapping when user connects an unmatched key to an existing region', () => {
     const config: MergeConfig = {
       geoKey: 'COUNTYCODE',

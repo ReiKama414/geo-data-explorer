@@ -139,7 +139,10 @@ export const EChartsAnalytics: React.FC<EChartsAnalyticsProps> = ({
           textStyle: { color: isDark ? '#f8fafc' : '#0f172a' },
           formatter: (params: any) => {
             const p = Array.isArray(params) ? params[0] : params;
-            const fullName = p.data?.rawName || p.name;
+            const fullName = String(p.data?.rawName || p.name)
+              .replace(/&/g, '&amp;')
+              .replace(/</g, '&lt;')
+              .replace(/>/g, '&gt;');
             return `
               <div style="font-size:12px;padding:3px;line-height:1.4;">
                 <strong style="color:${isDark ? '#38bdf8' : '#0284c7'};">${fullName}</strong><br/>
@@ -312,9 +315,13 @@ export const EChartsAnalytics: React.FC<EChartsAnalyticsProps> = ({
       chartInstance.current?.resize();
     };
     window.addEventListener('resize', handleResize);
+    const observer =
+      typeof ResizeObserver !== 'undefined' ? new ResizeObserver(handleResize) : null;
+    observer?.observe(chartRef.current);
 
     return () => {
       window.removeEventListener('resize', handleResize);
+      observer?.disconnect();
     };
   }, [rankedData, trendData, chartType, metricColumn, selectedRegionId, breaks, collapsed, isDark]);
 
@@ -465,9 +472,10 @@ export const EChartsAnalytics: React.FC<EChartsAnalyticsProps> = ({
       {/* 4. Chart: 圖表繪製區 (Strict Tier 4 - Document Flow Container) */}
       <div
         data-testid="echarts-tier-4-chart"
-        className="p-2 flex-1 min-h-[220px] overflow-hidden"
+        className="p-2 flex-initial shrink min-h-[140px] h-[15rem] sm:h-[17rem] overflow-hidden"
       >
-        <div ref={chartRef} className="w-full h-56 sm:h-64" />
+        {/* 高度跟隨容器：桌面面板在可用高度不足時會等比縮小，由 ResizeObserver 重新繪製 */}
+        <div ref={chartRef} className="w-full h-full" />
       </div>
 
       {/* 5. Legend / Footer: 補充資訊區 (Strict Tier 5) */}

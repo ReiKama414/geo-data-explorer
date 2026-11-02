@@ -244,12 +244,16 @@ export function performDataMerge(
         `Feature #${idx}`;
 
       unmatchedGeoFeatures.push({
-        id: feature.id || idx,
+        id: String(idx),
         name: String(props._regionName),
         geoKeyVal: String(rawGeoVal || ''),
         properties: props,
       });
     }
+
+    // 穩定且唯一的區域識別碼（以特徵索引為準），供地圖 / 排行 / 圖表 / 表格共用，
+    // 避免各元件各自推導 id 而造成選取狀態不一致。
+    props._idKey = String(idx);
 
     return {
       ...feature,

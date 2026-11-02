@@ -15,7 +15,16 @@ export function downloadFile(content: string, filename: string, mimeType: string
 }
 
 export function exportGeoJSON(geojson: CustomFeatureCollection, filename = 'merged-geodata.geojson') {
-  const jsonStr = JSON.stringify(geojson, null, 2);
+  const cleaned = {
+    ...geojson,
+    features: geojson.features.map((f) => {
+      // 移除僅供 UI 內部使用的識別碼
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { _idKey, ...rest } = (f.properties || {}) as Record<string, any>;
+      return { ...f, properties: rest };
+    }),
+  };
+  const jsonStr = JSON.stringify(cleaned, null, 2);
   downloadFile(jsonStr, filename, 'application/geo+json;charset=utf-8');
 }
 
@@ -23,6 +32,7 @@ export function exportFeaturesToCSV(features: any[], filename = 'merged-geodata.
   if (features.length === 0) return;
   const rows = features.map((f) => {
     const props = { ...f.properties };
+    delete props._idKey;
     return props;
   });
   const csv = Papa.unparse(rows);
@@ -43,17 +53,22 @@ export function exportUnmatchedToCSV(unmatched: UnmatchedCsvRecord[], filename =
 
 export function exportMapImage(map: MapLibreMap | null, filename = 'geo-choropleth-map.png') {
   if (!map) return;
-  try {
-    const canvas = map.getCanvas();
-    const dataUrl = canvas.toDataURL('image/png');
-    const a = document.createElement('a');
-    a.href = dataUrl;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-  } catch (err) {
-    console.error('Failed to export map snapshot:', err);
-    alert('無法匯出地圖截圖，可能是因為底圖來源跨域限制。');
-  }
+  // WebGL canvas 在繪製完成後緩衝區會被清空，必須在 render 事件內同步讀取，
+  // 否則 toDataURL 會得到空白（全透明）圖片。
+  map.once('render', () => {
+    try {
+      const canvas = map.getCanvas();
+      const dataUrl = canvas.toDataURL('image/png');
+      const a = document.createElement('a');
+      a.href = dataUrl;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    } catch (err) {
+      console.error('Failed to export map snapshot:', err);
+      alert('無法匯出地圖截圖，可能是因為底圖來源跨域限制。');
+    }
+  });
+  map.triggerRepaint();
 }

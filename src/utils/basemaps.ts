@@ -4,16 +4,18 @@ import type { StyleSpecification } from 'maplibre-gl';
 export const BASEMAP_CONFIGS: Record<BasemapStyle, BasemapConfig> = {
   'carto-dark': {
     id: 'carto-dark',
-    name: 'CARTO 深色極簡 (Dark Matter)',
-    styleUrl: 'https://basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}.png',
-    attribution: '© <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a>, © <a href="https://carto.com/attributions" target="_blank">CARTO</a>',
+    // CARTO 的 rastertiles 現已要求 API Key（回傳 "API KEY REQUIRED" 浮水印圖磚），
+    // 因此改用同風格的 Esri Canvas 灰階底圖（保留原 id 以維持相容）。
+    name: 'Esri 深色極簡 (Dark Gray)',
+    styleUrl: 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}',
+    attribution: 'Esri, HERE, Garmin, © OpenStreetMap contributors',
     thumbnail: '#191a1a',
   },
   'carto-positron': {
     id: 'carto-positron',
-    name: 'CARTO 淺色簡約 (Positron)',
-    styleUrl: 'https://basemaps.cartocdn.com/rastertiles/light_all/{z}/{x}/{y}.png',
-    attribution: '© <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a>, © <a href="https://carto.com/attributions" target="_blank">CARTO</a>',
+    name: 'Esri 淺色簡約 (Light Gray)',
+    styleUrl: 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}',
+    attribution: 'Esri, HERE, Garmin, © OpenStreetMap contributors',
     thumbnail: '#f2f3f0',
   },
   osm: {
@@ -44,7 +46,8 @@ export function createRasterStyle(basemapId: BasemapStyle): StyleSpecification {
         tiles: [config.styleUrl],
         tileSize: 256,
         attribution: config.attribution,
-        maxzoom: 19,
+        // Esri Canvas 灰階底圖最大層級為 16，超過會 404；其餘依來源上限
+        maxzoom: config.id === 'osm' ? 19 : config.id === 'esri-satellite' ? 18 : 16,
       },
     },
     layers: [
