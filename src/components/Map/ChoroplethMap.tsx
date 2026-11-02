@@ -3,9 +3,7 @@ import { Map as MapLibreMap, Popup, GeoJSONSource, setWorkerUrl } from 'maplibre
 // MapLibre v6 以 import.meta.url 推導 worker 檔案位置；經 Vite 打包後該路徑不存在，
 // 會導致 "Worker failed to load" 且地圖 / 多邊形完全不顯示，必須明確指定 worker URL。
 import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url';
-import {
-  Layers,
-} from 'lucide-react';
+import { Layers, ZoomIn, ZoomOut, RotateCcw } from 'lucide-react';
 import type {
   CustomFeatureCollection,
   BasemapStyle,
@@ -130,6 +128,9 @@ interface ChoroplethMapProps {
   rangeFilter: [number, number] | null;
   resolvedTheme?: ResolvedTheme;
   onMapReady?: (map: MapLibreMap) => void;
+  basemap: BasemapStyle;
+  onBasemapChange: (style: BasemapStyle) => void;
+  onRegisterFitView?: (fit: () => void) => void;
 }
 
 export const ChoroplethMap: React.FC<ChoroplethMapProps> = ({
@@ -143,15 +144,14 @@ export const ChoroplethMap: React.FC<ChoroplethMapProps> = ({
   rangeFilter,
   resolvedTheme = 'dark',
   onMapReady,
+  basemap,
+  onBasemapChange,
+  onRegisterFitView,
 }) => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
   const popupRef = useRef<Popup | null>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
-  const userSelectedBasemapRef = useRef<boolean>(false);
-  const [basemap, setBasemap] = useState<BasemapStyle>(
-    resolvedTheme === 'dark' ? 'carto-dark' : 'carto-positron'
-  );
   const appliedBasemapRef = useRef<BasemapStyle>(basemap);
   // 以 ref 保存最新的 callback / 欄位，避免地圖事件處理器（只註冊一次）讀到過期的閉包
   const metricColumnRef = useRef(metricColumn);
@@ -164,12 +164,12 @@ export const ChoroplethMap: React.FC<ChoroplethMapProps> = ({
   });
   const [showBasemapMenu, setShowBasemapMenu] = useState(false);
 
-  // Sync basemap with theme if user hasn't explicitly chosen a specific style
-  useEffect(() => {
-    if (!userSelectedBasemapRef.current) {
-      setBasemap(resolvedTheme === 'dark' ? 'carto-dark' : 'carto-positron');
-    }
-  }, [resolvedTheme]);
+  const mapControlBtn =
+    'p-2.5 bg-white/95 dark:bg-slate-900/90 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700/80 rounded-xl shadow-md dark:shadow-lg backdrop-blur-xs transition-all cursor-pointer';
+  const mapControlStack =
+    'flex flex-col bg-white/95 dark:bg-slate-900/90 border border-slate-200 dark:border-slate-700/80 rounded-xl shadow-md dark:shadow-lg backdrop-blur-xs overflow-hidden';
+  const mapControlStackBtn =
+    'p-2 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors border-b border-slate-100 dark:border-slate-800 last:border-b-0 cursor-pointer';
 
   // Helper to calculate bounding box of a GeoJSON
   const getBounds = useCallback((data: CustomFeatureCollection): [number, number, number, number] | null => {
@@ -450,27 +450,29 @@ export const ChoroplethMap: React.FC<ChoroplethMapProps> = ({
     fitRef.current();
   }, [boundsKey]);
 
+  useEffect(() => {
+    onRegisterFitView?.(() => fitRef.current());
+  }, [onRegisterFitView, boundsKey]);
+
   return (
     <div ref={wrapperRef} className="relative w-full h-full flex flex-col bg-slate-100 dark:bg-slate-950 overflow-hidden">
-      {/* MapLibre DOM Node */}
       <div ref={mapContainerRef} className="w-full h-full" />
 
-      {/* 僅保留底圖切換（圖示）；縮放／截圖／全螢幕改由頂欄匯出與滑鼠滾輪操作，避免地圖側欄破版 */}
+      {/* 底圖 + 縮放 + 重設視角（小螢幕右下避開篩選列；桌面左側置於篩選列下方） */}
       <div
         data-testid="map-controls-container"
-        className="absolute top-3 right-3 lg:right-auto lg:top-[max(11rem,calc(50%_-_6.5rem))] lg:left-3 z-20"
+        className="absolute bottom-3 right-3 lg:bottom-auto lg:right-auto lg:top-[max(11rem,calc(50%_-_6.5rem))] lg:left-3 flex flex-col gap-2 z-20 pointer-events-auto"
       >
         <div className="relative">
           <button
             type="button"
-            onClick={() => setShowBasemapMenu(!showBasemapMenu)}
+            onClick={() => setShowBasemapMenu((v) => !v)}
             title="切換底圖來源"
             aria-label="切換底圖來源"
-            className="p-2.5 bg-white/95 dark:bg-slate-900/90 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700/80 rounded-xl shadow-md dark:shadow-lg backdrop-blur-xs transition-all cursor-pointer"
+            className={mapControlBtn}
           >
-            <Layers className="w-4 h-4 text-slate-700 dark:text-sky-400" />
+            <Layers className="w-4 h-4 text-slate-700 dark:text-sky-400 mx-auto" />
           </button>
-
           {showBasemapMenu && (
             <>
               <div
@@ -478,7 +480,7 @@ export const ChoroplethMap: React.FC<ChoroplethMapProps> = ({
                 aria-hidden="true"
                 onClick={() => setShowBasemapMenu(false)}
               />
-              <div className="absolute right-0 lg:left-0 mt-1.5 w-52 bg-white/98 dark:bg-slate-900/95 border border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl p-2 z-40 backdrop-blur-xs text-xs space-y-1 max-w-[calc(100vw-24px)]">
+              <div className="absolute right-0 bottom-full mb-1.5 lg:bottom-auto lg:top-full lg:mt-1.5 lg:left-0 w-52 bg-white/98 dark:bg-slate-900/95 border border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl p-2 z-40 backdrop-blur-xs text-xs space-y-1 max-w-[calc(100vw-24px)]">
                 <div className="px-2 py-1.5 text-slate-500 dark:text-slate-400 font-semibold border-b border-slate-100 dark:border-slate-800 mb-1">
                   公開合法地圖來源
                 </div>
@@ -490,8 +492,7 @@ export const ChoroplethMap: React.FC<ChoroplethMapProps> = ({
                       key={styleKey}
                       type="button"
                       onClick={() => {
-                        userSelectedBasemapRef.current = true;
-                        setBasemap(styleKey);
+                        onBasemapChange(styleKey);
                         setShowBasemapMenu(false);
                       }}
                       className={`w-full text-left px-2.5 py-2 rounded-lg flex items-center justify-between gap-2 transition-colors cursor-pointer ${
@@ -511,6 +512,36 @@ export const ChoroplethMap: React.FC<ChoroplethMapProps> = ({
               </div>
             </>
           )}
+        </div>
+
+        <div className={mapControlStack}>
+          <button
+            type="button"
+            onClick={() => mapRef.current?.zoomIn()}
+            title="放大地圖"
+            aria-label="放大地圖"
+            className={mapControlStackBtn}
+          >
+            <ZoomIn className="w-4 h-4 mx-auto" />
+          </button>
+          <button
+            type="button"
+            onClick={() => mapRef.current?.zoomOut()}
+            title="縮小地圖"
+            aria-label="縮小地圖"
+            className={mapControlStackBtn}
+          >
+            <ZoomOut className="w-4 h-4 mx-auto" />
+          </button>
+          <button
+            type="button"
+            onClick={() => fitRef.current()}
+            title="重設視角至資料範圍"
+            aria-label="重設視角至資料範圍"
+            className={mapControlStackBtn}
+          >
+            <RotateCcw className="w-4 h-4 mx-auto text-emerald-600 dark:text-emerald-400" />
+          </button>
         </div>
       </div>
     </div>

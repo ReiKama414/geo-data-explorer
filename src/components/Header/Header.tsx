@@ -35,6 +35,7 @@ interface HeaderProps {
   geojson: CustomFeatureCollection;
   onLoadPreset: (presetId: 'taiwan' | 'world' | 'us') => void;
   onExportPng: () => void;
+  onResetMapView?: () => void;
   theme: ThemeMode;
   resolvedTheme: ResolvedTheme;
   onSetTheme: (theme: ThemeMode) => void;
@@ -53,6 +54,7 @@ export const Header: React.FC<HeaderProps> = ({
   geojson,
   onLoadPreset,
   onExportPng,
+  onResetMapView,
   theme,
   resolvedTheme,
   onSetTheme,
@@ -308,6 +310,17 @@ export const Header: React.FC<HeaderProps> = ({
 
               {showExportMenu && (
                 <div className="absolute right-0 mt-1.5 w-48 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded shadow-xl p-1 z-40 text-xs space-y-0.5">
+                  <button
+                    onClick={() => {
+                      onResetMapView?.();
+                      setShowExportMenu(false);
+                    }}
+                    className="w-full text-left px-2.5 py-1.5 rounded hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Compass className="w-3.5 h-3.5 text-sky-600 dark:text-sky-400" />
+                    重設地圖視角（對準資料）
+                  </button>
+                  <div className="my-0.5 border-t border-slate-100 dark:border-slate-800" />
                   <button
                     onClick={() => {
                       exportGeoJSON(geojson);

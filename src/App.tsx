@@ -8,6 +8,7 @@ import type {
   MergeConfig,
   ClassificationMethod,
   PaletteId,
+  BasemapStyle,
 } from './types';
 import { performDataMerge } from './utils/dataMerge';
 import {
@@ -53,6 +54,18 @@ export function App() {
 
   // Map instance ref for snapshot export
   const mapInstanceRef = useRef<MapLibreMap | null>(null);
+  const fitMapViewRef = useRef<(() => void) | null>(null);
+  const registerFitMapView = useCallback((fit: () => void) => {
+    fitMapViewRef.current = fit;
+  }, []);
+  const userBasemapPickRef = useRef(false);
+  const [basemap, setBasemap] = useState<BasemapStyle>('carto-dark');
+
+  useEffect(() => {
+    if (!userBasemapPickRef.current) {
+      setBasemap(resolvedTheme === 'dark' ? 'carto-dark' : 'carto-positron');
+    }
+  }, [resolvedTheme]);
 
   // Merge Configuration State
   const [mergeConfig, setMergeConfig] = useState<MergeConfig>({
@@ -405,6 +418,7 @@ export function App() {
         geojson={mergeResult?.mergedGeoJSON ?? { type: 'FeatureCollection', features: [] }}
         onLoadPreset={loadPreset}
         onExportPng={() => exportMapImage(mapInstanceRef.current)}
+        onResetMapView={() => fitMapViewRef.current?.()}
         theme={theme}
         resolvedTheme={resolvedTheme}
         onSetTheme={setTheme}
@@ -452,13 +466,19 @@ export function App() {
               searchFilter={searchQuery}
               rangeFilter={rangeFilter}
               resolvedTheme={resolvedTheme}
+              basemap={basemap}
+              onBasemapChange={(style) => {
+                userBasemapPickRef.current = true;
+                setBasemap(style);
+              }}
+              onRegisterFitView={registerFitMapView}
               onMapReady={(map) => {
                 mapInstanceRef.current = map;
               }}
             />
 
             {/* Floating Top Filter Bar & Unmatched Warning */}
-            <div className="absolute top-3 left-3 right-16 md:right-auto md:w-[620px] z-10 space-y-2 pointer-events-auto max-w-[calc(100vw-24px)]">
+            <div className="absolute top-3 left-3 right-3 md:right-auto md:w-[620px] z-10 space-y-2 pointer-events-auto max-w-[calc(100vw-24px)]">
               <FilterBar
                 metricColumns={mergeResult.allMetricColumns}
                 selectedMetric={mergeConfig.metricColumn}
