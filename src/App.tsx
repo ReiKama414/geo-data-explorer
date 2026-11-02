@@ -96,8 +96,8 @@ export function App() {
     try {
       if (presetId === 'taiwan') {
         const [geoRes, csvRes] = await Promise.all([
-          fetch('/presets/taiwan-counties.geojson').then(parseJsonResponse),
-          fetch('/presets/taiwan-metrics.csv').then(parseTextResponse),
+          fetch(`${import.meta.env.BASE_URL}presets/taiwan-counties.geojson`).then(parseJsonResponse),
+          fetch(`${import.meta.env.BASE_URL}presets/taiwan-metrics.csv`).then(parseTextResponse),
         ]);
         const parsedCsv = Papa.parse<Record<string, any>>(csvRes, {
           header: true,
@@ -126,8 +126,8 @@ export function App() {
         setPaletteId('viridis');
       } else if (presetId === 'world') {
         const [geoRes, csvRes] = await Promise.all([
-          fetch('/presets/world-countries.geojson').then(parseJsonResponse),
-          fetch('/presets/world-metrics.csv').then(parseTextResponse),
+          fetch(`${import.meta.env.BASE_URL}presets/world-countries.geojson`).then(parseJsonResponse),
+          fetch(`${import.meta.env.BASE_URL}presets/world-metrics.csv`).then(parseTextResponse),
         ]);
         const parsedCsv = Papa.parse<Record<string, any>>(csvRes, {
           header: true,
@@ -156,8 +156,8 @@ export function App() {
         setPaletteId('plasma');
       } else if (presetId === 'us') {
         const [geoRes, csvRes] = await Promise.all([
-          fetch('/presets/us-states.geojson').then(parseJsonResponse),
-          fetch('/presets/us-states-metrics.csv').then(parseTextResponse),
+          fetch(`${import.meta.env.BASE_URL}presets/us-states.geojson`).then(parseJsonResponse),
+          fetch(`${import.meta.env.BASE_URL}presets/us-states-metrics.csv`).then(parseTextResponse),
         ]);
         const parsedCsv = Papa.parse<Record<string, any>>(csvRes, {
           header: true,
